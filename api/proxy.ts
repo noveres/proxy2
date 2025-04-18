@@ -1,13 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import axios from 'axios';  // 添加 axios 導入
+import formidable from 'formidable';
+import { createReadStream } from 'fs';
+import FormData from 'form-data';
+import { IncomingMessage } from 'http';
+import fetch from 'node-fetch';
+
+export const config = {
+  api: {
+    bodyParser: false, // 禁用內建的 bodyParser
+  },
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 添加 CORS 頭
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS 設置
+  res.setHeader('Access-Control-Allow-Origin', 'https://noveres.github.io');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-  // 處理 OPTIONS 請求 (預檢請求)
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -22,51 +32,116 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const url = `${backendBaseUrl}/${targetPath}`;
 
   try {
-    // 準備請求頭
-    const headers: HeadersInit = {};
-    
-    // 複製原始請求的頭信息，排除一些特定頭
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (!['host', 'connection', 'content-length'].includes(key.toLowerCase())) {
-        headers[key] = value as string;
-      }
-    }
+    // 檢查是否為帶有文件的POST請求
+    if (req.method === 'POST' && req.headers['content-type']?.includes('multipart/form-data')) {
+      // 解析 multipart/form-data
+      const form = new formidable.IncomingForm();
+      
+      form.parse(req as IncomingMessage, async (err, fields, files) => {
+        if (err) {
+          return res.status(500).json({ error: 'File parsing error', details: err.message });
+        }
 
-    // 處理請求體
-    let body = undefined;
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      body = JSON.stringify(req.body);
-    }
-
-    // 發送請求到後端
-    const response = await fetch(url, {
-      method: req.method,
-      headers: headers,
-      body: body,
-    });
-
-    // 獲取響應數據
-    let responseData;
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      responseData = await response.json();
+        try {
+          // 創建新的 FormData 對象
+          const formData = new FormData();
+          
+          // 添加所有文本字段
+          Object.entries(fields).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+              value.forEach(v => formData.append(key, v));
+            } else {
+              formData.append(key, value);
+            }
+          });
+          
+          // 添加所有文件
+          Object.entries(files).forEach(([key, fileInfo]) => {
+            if (Array.isArray(fileInfo)) {
+              fileInfo.forEach(file => {
+                formData.append(key, createReadStream(file.filepath), {
+                  filename: file.originalFilename || 'file',
+                  contentType: file.mimetype
+                });
+              });
+            } else {
+              formData.append(key, createReadStream(fileInfo.filepath), {
+                filename: fileInfo.originalFilename || 'file',
+                contentType: fileInfo.mimetype
+              });
+            }
+          });
+          
+          // 發送到後端API
+          const response = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: formData.getHeaders(),
+          });
+          
+          // 處理回應
+          const contentType = response.headers.get('content-type');
+          let responseData;
+          
+          if (contentType && contentType.includes('application/json')) {
+            responseData = await response.json();
+          } else {
+            responseData = await response.text();
+          }
+          
+          // 設置HTTP狀態碼
+          res.status(response.status);
+          
+          // 返回數據
+          return res.send(responseData);
+        } catch (fetchError) {
+          console.error('Backend request error:', fetchError);
+          return res.status(500).json({ 
+            error: 'Backend request error', 
+            details: fetchError.message || String(fetchError)
+          });
+        }
+      });
     } else {
-      responseData = await response.text();
-    }
-
-    // 設置響應狀態
-    res.status(response.status);
-
-    // 轉發響應頭 (可選)
-    response.headers.forEach((value, key) => {
-      // 避免覆蓋已設置的 CORS 頭
-      if (!key.toLowerCase().startsWith('access-control-')) {
-        res.setHeader(key, value);
+      // 處理非文件上傳的請求
+      const headers: HeadersInit = {};
+      
+      // 複製原始請求的頭信息
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (!['host', 'connection', 'content-length'].includes(key.toLowerCase())) {
+          headers[key] = value as string;
+        }
       }
-    });
-
-    // 返回響應數據
-    return res.send(responseData);
+      
+      // 處理請求體
+      let body = undefined;
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        body = JSON.stringify(req.body);
+      }
+      
+      // 發送請求
+      const response = await fetch(url, {
+        method: req.method,
+        headers: headers,
+        body: body,
+      });
+      
+      // 處理回應
+      const contentType = response.headers.get('content-type');
+      let responseData;
+      
+      if (contentType && contentType.includes('application/json')) {
+        responseData = await response.json();
+      } else {
+        responseData = await response.text();
+      }
+      
+      // 設置HTTP狀態碼
+      res.status(response.status);
+      
+      // 返回數據
+      return res.send(responseData);
+    }
   } catch (error) {
     console.error('Proxy error:', error);
     return res.status(500).json({
