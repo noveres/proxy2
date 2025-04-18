@@ -18,6 +18,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 
   try {
+
+  } catch (error) {
+    const status = error.response?.status || 500;
+    res.status(status).json({
+      error: 'Proxy error',
+      details: error.message,
+      status
+    });
+  }
+
+
+  try {
+
     // 直接將請求轉發到後端
     const { data, status, headers } = await axios({
       method: req.method as any,
@@ -37,19 +50,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 返回響應
     res.status(status);
     data.pipe(res);
-  } catch (error) {
-    const status = error.response?.status || 500;
-    res.status(status).json({
-      error: 'Proxy error',
-      details: error.message,
-      status
-    });
-  }
 
 
-  try {
     // 創建請求頭，保留原請求的 Content-Type
-    const headers: HeadersInit = {};
+  
     const contentType = req.headers['content-type'];
     
     if (contentType) {
@@ -88,7 +92,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const text = await response.text();
       res.send(text);
     }
-  } catch (err) {
-    res.status(500).json({ error: 'Proxy error', details: err });
+  } catch (error) {
+    const status = error.response?.status || 500;
+    res.status(status).json({
+      error: 'Proxy error',
+      details: error.message,
+      status
+    });
   }
 }
