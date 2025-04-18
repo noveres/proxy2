@@ -26,15 +26,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const contentType = response.headers.get('content-type');
-
     res.status(response.status);
+    res.setHeader('Content-Type', contentType || 'application/octet-stream');
 
     if (contentType && contentType.includes('application/json')) {
       const data = await response.json();
       res.json(data);
     } else {
-      const text = await response.text();
-      res.send(text);
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      res.send(buffer);
     }
   } catch (err) {
     res.status(500).json({ error: 'Proxy error', details: err });
