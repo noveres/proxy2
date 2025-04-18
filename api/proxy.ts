@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Readable } from 'stream';
+import axios from 'axios';  // 添加 axios 導入
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 添加 CORS 頭
@@ -16,22 +16,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const backendBaseUrl = process.env.BACKEND_BASE_URL;
   const url = `${backendBaseUrl}/${targetPath}`;
 
-
   try {
-
-  } catch (error) {
-    const status = error.response?.status || 500;
-    res.status(status).json({
-      error: 'Proxy error',
-      details: error.message,
-      status
-    });
-  }
-
-
-  try {
-
-    // 直接將請求轉發到後端
+    // 選擇一種方式處理請求：這裡使用 axios
     const { data, status, headers } = await axios({
       method: req.method as any,
       url: url,
@@ -39,64 +25,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ...req.headers,
         host: new URL(backendBaseUrl).host,
       },
-      data: req,
-      responseType: 'stream',
+      data: req.method !== 'GET' ? req.body : undefined,
+      responseType: 'arraybuffer',  // 使用 arraybuffer 而不是 stream，在 serverless 環境中更可靠
     });
 
+    // 設置響應頭
     Object.entries(headers).forEach(([key, value]) => {
       if (value) res.setHeader(key, value);
     });
   
     // 返回響應
     res.status(status);
-    data.pipe(res);
-
-
-    // 創建請求頭，保留原請求的 Content-Type
-  
-    const contentType = req.headers['content-type'];
-    
-    if (contentType) {
-      headers['Content-Type'] = contentType;
-    }
-
-    // 根據請求類型和 Content-Type 處理請求體
-    let requestBody;
-    
-    if (req.method !== 'GET') {
-      if (contentType && contentType.includes('multipart/form-data')) {
-        // 對於 multipart/form-data，直接傳遞原始請求
-        // 注意：Vercel serverless 環境可能需要特殊處理 FormData
-        // 這裡僅作示例，實際實現可能需要根據您的環境調整
-        requestBody = req.body; // 對於文件上傳，這需要更複雜的處理
-      } else {
-        // 對於其他類型，例如 JSON
-        requestBody = JSON.stringify(req.body);
-      }
-    }
-
-    const response = await fetch(url, {
-      method: req.method,
-      headers: headers,
-      body: requestBody,
-    });
-
-    const responseContentType = response.headers.get('content-type');
-
-    res.status(response.status);
-
-    if (responseContentType && responseContentType.includes('application/json')) {
-      const data = await response.json();
-      res.json(data);
-    } else {
-      const text = await response.text();
-      res.send(text);
-    }
+    res.send(data);
   } catch (error) {
+    console.error('Proxy error:', error);
     const status = error.response?.status || 500;
     res.status(status).json({
       error: 'Proxy error',
-      details: error.message,
+      details: error.message || String(error),
       status
     });
   }
