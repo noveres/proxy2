@@ -17,14 +17,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const url = `${backendBaseUrl}/${targetPath}`;
   
   try {
-    const response = await fetch(url, {
+    // 判斷是否為 multipart/form-data
+    const isMultipart = req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data');
+    let fetchOptions: any = {
       method: req.method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
-    });
-
+      headers: { ...req.headers },
+    };
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      if (isMultipart) {
+        // multipart 直接轉發原始 body
+        fetchOptions.body = req;
+        // 不要手動設置 Content-Type，讓 fetch 自己帶
+        delete fetchOptions.headers['content-type'];
+      } else {
+        fetchOptions.headers['Content-Type'] = 'application/json';
+        fetchOptions.body = JSON.stringify(req.body);
+      }
+    }
+    const response = await fetch(url, fetchOptions);
     const contentType = response.headers.get('content-type');
 
     res.status(response.status);
