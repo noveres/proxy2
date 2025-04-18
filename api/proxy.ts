@@ -14,9 +14,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const targetPath = req.query.path as string;
   const backendBaseUrl = process.env.BACKEND_BASE_URL;
-
   const url = `${backendBaseUrl}/${targetPath}`;
+
+
+  try {
+    // 直接將請求轉發到後端
+    const { data, status, headers } = await axios({
+      method: req.method as any,
+      url: url,
+      headers: {
+        ...req.headers,
+        host: new URL(backendBaseUrl).host,
+      },
+      data: req,
+      responseType: 'stream',
+    });
+
+    Object.entries(headers).forEach(([key, value]) => {
+      if (value) res.setHeader(key, value);
+    });
   
+    // 返回響應
+    res.status(status);
+    data.pipe(res);
+  } catch (error) {
+    const status = error.response?.status || 500;
+    res.status(status).json({
+      error: 'Proxy error',
+      details: error.message,
+      status
+    });
+  }
+
+
   try {
     // 創建請求頭，保留原請求的 Content-Type
     const headers: HeadersInit = {};
