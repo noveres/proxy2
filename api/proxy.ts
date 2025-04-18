@@ -7,43 +7,71 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // 處理 OPTIONS 請求
+  // 處理 OPTIONS 請求 (預檢請求)
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  const targetPath = req.query.path as string;
+  const targetPath = req.query.path as string || '';
   const backendBaseUrl = process.env.BACKEND_BASE_URL;
+  
+  if (!backendBaseUrl) {
+    return res.status(500).json({ error: 'Backend URL not configured' });
+  }
+
   const url = `${backendBaseUrl}/${targetPath}`;
 
   try {
-    // 選擇一種方式處理請求：這裡使用 axios
-    const { data, status, headers } = await axios({
-      method: req.method as any,
-      url: url,
-      headers: {
-        ...req.headers,
-        host: new URL(backendBaseUrl).host,
-      },
-      data: req.method !== 'GET' ? req.body : undefined,
-      responseType: 'arraybuffer',  // 使用 arraybuffer 而不是 stream，在 serverless 環境中更可靠
+    // 準備請求頭
+    const headers: HeadersInit = {};
+    
+    // 複製原始請求的頭信息，排除一些特定頭
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (!['host', 'connection', 'content-length'].includes(key.toLowerCase())) {
+        headers[key] = value as string;
+      }
+    }
+
+    // 處理請求體
+    let body = undefined;
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      body = JSON.stringify(req.body);
+    }
+
+    // 發送請求到後端
+    const response = await fetch(url, {
+      method: req.method,
+      headers: headers,
+      body: body,
     });
 
-    // 設置響應頭
-    Object.entries(headers).forEach(([key, value]) => {
-      if (value) res.setHeader(key, value);
+    // 獲取響應數據
+    let responseData;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      responseData = await response.text();
+    }
+
+    // 設置響應狀態
+    res.status(response.status);
+
+    // 轉發響應頭 (可選)
+    response.headers.forEach((value, key) => {
+      // 避免覆蓋已設置的 CORS 頭
+      if (!key.toLowerCase().startsWith('access-control-')) {
+        res.setHeader(key, value);
+      }
     });
-  
-    // 返回響應
-    res.status(status);
-    res.send(data);
+
+    // 返回響應數據
+    return res.send(responseData);
   } catch (error) {
     console.error('Proxy error:', error);
-    const status = error.response?.status || 500;
-    res.status(status).json({
+    return res.status(500).json({
       error: 'Proxy error',
       details: error.message || String(error),
-      status
     });
   }
 }
