@@ -17,14 +17,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const url = `${backendBaseUrl}/${targetPath}`;
   
   try {
-    // 复制原始 headers，并移除 host 以避免冲突
-    const headers = { ...req.headers };
-    delete headers["host"];
-
     const response = await fetch(url, {
       method: req.method,
-      headers,
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
     });
 
     const contentType = response.headers.get('content-type');
