@@ -29,6 +29,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fetchOptions.body = req;
         // 不要手動設置 Content-Type，讓 fetch 自己帶
         delete fetchOptions.headers['content-type'];
+      } else if (req.headers['content-type'] && req.headers['content-type'].includes('application/x-www-form-urlencoded')) {
+        // x-www-form-urlencoded 直接轉發原始 body
+        fetchOptions.body = req;
+        // 保留原始 Content-Type
       } else {
         fetchOptions.headers['Content-Type'] = 'application/json';
         fetchOptions.body = JSON.stringify(req.body);
