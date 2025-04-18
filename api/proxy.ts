@@ -29,9 +29,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       duplex: 'half', // 💥 必須加上這行才不會錯
     };
 
-    if (isMultipart) {
-      // 讓 fetch 自己幫你設 boundary，不要手動指定 content-type
-      delete fetchOptions.headers['content-type'];
+    // 針對 multipart，不要手動設 Content-Type，讓 fetch 自己處理 boundary
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      fetchOptions.body = req; // stream passthrough
+      if (isMultipart) {
+        delete fetchOptions.headers['content-type'];
+      }
     }
 
     const response = await fetch(url, fetchOptions);
@@ -43,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (response.body) {
-      await streamPipeline(response.body, res);
+      await streamPipeline(response.body, res); // 傳圖片／檔案 stream
     } else {
       res.end();
     }
