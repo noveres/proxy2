@@ -25,13 +25,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: {
         ...req.headers,
       },
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req : undefined,
-      duplex: 'half', // 💥 必須加上這行才不會錯
+      // 初始化為 undefined，稍後會根據請求方法設置
+      body: undefined
     };
 
-    // 針對 multipart，不要手動設 Content-Type，讓 fetch 自己處理 boundary
+    // 針對 GET 和 HEAD 以外的請求方法，讀取 req stream 到 Buffer
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      fetchOptions.body = req; // stream passthrough
+      // 讀取 req stream 到 Buffer 以避免 duplex 問題
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const bodyBuffer = Buffer.concat(chunks);
+      
+      // 設置 body 為 Buffer
+      fetchOptions.body = bodyBuffer;
+      
+      // 針對 multipart，不要手動設 Content-Type，讓 fetch 自己處理 boundary
       if (isMultipart) {
         delete fetchOptions.headers['content-type'];
       }
