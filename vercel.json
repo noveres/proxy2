@@ -3,6 +3,12 @@
     "builds": [
       { "src": "api/*.ts", "use": "@vercel/node" }
     ],
+    "functions": {
+      "api/proxy.ts": {
+        "memory": 1024,
+        "maxDuration": 60
+      }
+    },
     "rewrites": [
       {
         "source": "/:path*",
